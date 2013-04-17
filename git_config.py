@@ -24,6 +24,7 @@ try:
 except ImportError:
   import dummy_threading as _threading
 import time
+import urlparse
 try:
   import urllib2
 except ImportError:
@@ -580,13 +581,15 @@ class Remote(object):
         u = u[:len(u) - len('/ssh_info')]
       if not u.endswith('/'):
         u += '/'
-      http_url = u
+      parsed_url = urlparse.urlparse(u)
 
       if u in REVIEW_CACHE:
         self._review_url = REVIEW_CACHE[u]
       elif 'REPO_HOST_PORT_INFO' in os.environ:
+        # Environment can override host and port, but lets keep
+        # the relative path we extracted from the original review URL
         host, port = os.environ['REPO_HOST_PORT_INFO'].split()
-        self._review_url = self._SshReviewUrl(userEmail, host, port)
+        self._review_url = self._SshReviewUrl(userEmail, host, port, parsed_url.path)
         REVIEW_CACHE[u] = self._review_url
       else:
         try:
@@ -600,10 +603,10 @@ class Remote(object):
 
           if info == 'NOT_AVAILABLE':
             # Assume HTTP if SSH is not enabled.
-            self._review_url = http_url + 'p/'
+            self._review_url = '%s/%s/p/%s' % (parsed_url.scheme, parsed_url.netloc, parsed_url.path)
           else:
             host, port = info.split()
-            self._review_url = self._SshReviewUrl(userEmail, host, port)
+            self._review_url = self._SshReviewUrl(userEmail, host, port, parsed_url.path)
         except urllib.error.HTTPError as e:
           raise UploadError('%s: %s' % (self.review, str(e)))
         except urllib.error.URLError as e:
@@ -612,11 +615,11 @@ class Remote(object):
         REVIEW_CACHE[u] = self._review_url
     return self._review_url + self.projectname
 
-  def _SshReviewUrl(self, userEmail, host, port):
+  def _SshReviewUrl(self, userEmail, host, port, path):
     username = self._config.GetString('review.%s.username' % self.review)
     if username is None:
       username = userEmail.split('@')[0]
-    return 'ssh://%s@%s:%s/' % (username, host, port)
+    return 'ssh://%s@%s:%s/%s' % (username, host, port, path)
 
   def ToLocal(self, rev):
     """Convert a remote revision string to something we have locally.
